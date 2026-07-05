@@ -1,11 +1,15 @@
 # main.R  —  Water bacteria prediction pipeline (summer months only)
 # Run: Rscript main.R   OR source() interactively.
 #
+# To pull in new rain/flow/bacteria observations before modelling, run
+# R/00_fetch_data.R first (see that file's header for details -- bacteria
+# updates require a manual review step and aren't applied automatically).
+#
 # Model: Bayesian regression (brms, Stan backend) predicting log(bacteria)
 # from river flow and rainfall — see R/03_model.R for the formula.
 #
 # Required packages:
-#   install.packages(c("tidyverse", "lubridate", "brms"))
+#   install.packages(c("tidyverse", "lubridate", "brms", "httr", "jsonlite"))
 
 source("R/01_load_data.R")
 source("R/02_features.R")
