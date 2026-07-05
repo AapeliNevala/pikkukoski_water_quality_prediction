@@ -57,6 +57,46 @@ status_label <- function(val, threshold) {
 
 entero_status <- status_label(latest_entero$observed, ENTERO_THRESHOLD)
 coli_status   <- status_label(latest_coli$observed,   COLI_THRESHOLD)
+
+## Rangebreaks that hide the non-summer months (Sep–May) on date axes, so
+## consecutive June-August seasons sit next to each other with no dead space.
+SUMMER_RANGEBREAKS <- list(list(pattern = "day of year", bounds = list(244, 151)))
+
+make_bacteria_plot <- function(df, threshold, title_text) {
+  obs <- filter(df, is_observed)
+
+  plot_ly() |>
+    # CI ribbon
+    add_ribbons(data = df, x = ~date,
+                ymin = ~pred_lo90, ymax = ~pred_hi90,
+                fillcolor = "rgba(70,130,180,0.2)",
+                line = list(color = "transparent"),
+                name = "90% CI", hoverinfo = "skip") |>
+    # Prediction line
+    add_lines(data = df, x = ~date, y = ~pred_mean,
+              line = list(color = "steelblue", width = 2),
+              name = "Model prediction") |>
+    # Observed points
+    add_markers(data = obs, x = ~date, y = ~observed,
+                marker = list(color = "black", size = 7),
+                name = "Observed",
+                text  = ~paste0(format(date, "%d %b %Y"),
+                                "<br>Measured: ", observed, " CFU/100 mL"),
+                hovertemplate = "%{text}<extra></extra>") |>
+    # Threshold line
+    add_lines(x = range(df$date), y = c(threshold, threshold),
+              line = list(color = "red", dash = "dash", width = 1.5),
+              name = paste("Limit:", threshold),
+              hoverinfo = "skip") |>
+    layout(
+      yaxis  = list(title = "CFU / 100 mL", type = "log",
+                    tickformat = ","),
+      xaxis  = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
+      legend = list(orientation = "h", y = -0.15),
+      hovermode = "x unified"
+    ) |>
+    config(displayModeBar = FALSE)
+}
 ```
 
 # Overview
@@ -112,47 +152,12 @@ list(
 ### Enterococci {.tabset}
 
 ```{r}
+#| title: "2026"
+make_bacteria_plot(filter(entero, year == "2026"), ENTERO_THRESHOLD, "Enterococci 2026")
+```
+
+```{r}
 #| title: "All years"
-## Rangebreaks that hide the non-summer months (Sep–May) on date axes, so
-## consecutive June-August seasons sit next to each other with no dead space.
-SUMMER_RANGEBREAKS <- list(list(pattern = "day of year", bounds = list(244, 151)))
-
-make_bacteria_plot <- function(df, threshold, title_text) {
-  obs <- filter(df, is_observed)
-
-  plot_ly() |>
-    # CI ribbon
-    add_ribbons(data = df, x = ~date,
-                ymin = ~pred_lo90, ymax = ~pred_hi90,
-                fillcolor = "rgba(70,130,180,0.2)",
-                line = list(color = "transparent"),
-                name = "90% CI", hoverinfo = "skip") |>
-    # Prediction line
-    add_lines(data = df, x = ~date, y = ~pred_mean,
-              line = list(color = "steelblue", width = 2),
-              name = "Model prediction") |>
-    # Observed points
-    add_markers(data = obs, x = ~date, y = ~observed,
-                marker = list(color = "black", size = 7),
-                name = "Observed",
-                text  = ~paste0(format(date, "%d %b %Y"),
-                                "<br>Measured: ", observed, " CFU/100 mL"),
-                hovertemplate = "%{text}<extra></extra>") |>
-    # Threshold line
-    add_lines(x = range(df$date), y = c(threshold, threshold),
-              line = list(color = "red", dash = "dash", width = 1.5),
-              name = paste("Limit:", threshold),
-              hoverinfo = "skip") |>
-    layout(
-      yaxis  = list(title = "CFU / 100 mL", type = "log",
-                    tickformat = ","),
-      xaxis  = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
-      legend = list(orientation = "h", y = -0.15),
-      hovermode = "x unified"
-    ) |>
-    config(displayModeBar = FALSE)
-}
-
 make_bacteria_plot(entero, ENTERO_THRESHOLD, "Enterococci")
 ```
 
@@ -186,12 +191,12 @@ make_bacteria_plot(filter(entero, year == "2024"), ENTERO_THRESHOLD, "Enterococc
 make_bacteria_plot(filter(entero, year == "2025"), ENTERO_THRESHOLD, "Enterococci 2025")
 ```
 
+### E. coli {.tabset}
+
 ```{r}
 #| title: "2026"
-make_bacteria_plot(filter(entero, year == "2026"), ENTERO_THRESHOLD, "Enterococci 2026")
+make_bacteria_plot(filter(coli, year == "2026"), COLI_THRESHOLD, "E. coli 2026")
 ```
-
-### E. coli {.tabset}
 
 ```{r}
 #| title: "All years"
@@ -226,11 +231,6 @@ make_bacteria_plot(filter(coli, year == "2024"), COLI_THRESHOLD, "E. coli 2024")
 ```{r}
 #| title: "2025"
 make_bacteria_plot(filter(coli, year == "2025"), COLI_THRESHOLD, "E. coli 2025")
-```
-
-```{r}
-#| title: "2026"
-make_bacteria_plot(filter(coli, year == "2026"), COLI_THRESHOLD, "E. coli 2026")
 ```
 
 ## Row {height=28%}
