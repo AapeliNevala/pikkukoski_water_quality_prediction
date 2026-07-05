@@ -113,6 +113,10 @@ list(
 
 ```{r}
 #| title: "All years"
+## Rangebreaks that hide the non-summer months (Sep–May) on date axes, so
+## consecutive June-August seasons sit next to each other with no dead space.
+SUMMER_RANGEBREAKS <- list(list(pattern = "day of year", bounds = list(244, 151)))
+
 make_bacteria_plot <- function(df, threshold, title_text) {
   obs <- filter(df, is_observed)
 
@@ -142,7 +146,7 @@ make_bacteria_plot <- function(df, threshold, title_text) {
     layout(
       yaxis  = list(title = "CFU / 100 mL", type = "log",
                     tickformat = ","),
-      xaxis  = list(title = ""),
+      xaxis  = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
       legend = list(orientation = "h", y = -0.15),
       hovermode = "x unified"
     ) |>
@@ -243,7 +247,7 @@ plot_ly(rain_plot_data, x = ~date, y = ~rain, type = "bar",
         name = "Rain (mm)",
         hovertemplate = "%{x|%d %b %Y}: %{y:.1f} mm<extra></extra>") |>
   layout(
-    xaxis = list(title = ""),
+    xaxis = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
     yaxis = list(title = "mm"),
     bargap = 0
   ) |>
@@ -262,7 +266,7 @@ plot_ly(flow_plot_data, x = ~date, y = ~flow,
         name = "Flow",
         hovertemplate = "%{x|%d %b %Y}: %{y:.1f} m³/s<extra></extra>") |>
   layout(
-    xaxis = list(title = ""),
+    xaxis = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
     yaxis = list(title = "m³/s")
   ) |>
   config(displayModeBar = FALSE)
