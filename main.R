@@ -39,6 +39,8 @@ cat(sprintf("  Grid: %d swimming-season days | %d bacteria measurements\n",
             nrow(grid$season_grid), sum(!is.na(grid$season_grid$entero))))
 
 # ── 3 & 4. Fit + predict — one model per bacteria type ────────────────────────
+# Bacteria threshold lines (site-specific limits):
+thresholds <- c(entero = 400, coli = 500)
 targets <- c("log_entero", "log_coli")
 
 all_predictions <- map_dfr(targets, function(tgt) {
@@ -58,14 +60,12 @@ all_predictions <- map_dfr(targets, function(tgt) {
   print(summary(fit_obj$fit))
 
   message(sprintf("Predicting %s...", bacteria_name))
-  predict_bacteria(fit_obj, grid)
+  predict_bacteria(fit_obj, grid, threshold = thresholds[[bacteria_name]])
 })
 
 save_predictions(all_predictions, "output/predictions.csv")
 
 # ── 5. Quick sanity plot ───────────────────────────────────────────────────────
-# Bacteria threshold lines (site-specific limits):
-thresholds <- c(entero = 400, coli = 500)
 
 p <- ggplot(all_predictions, aes(x = date)) +
   geom_ribbon(aes(ymin = pred_lo90, ymax = pred_hi90),

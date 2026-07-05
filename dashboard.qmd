@@ -44,15 +44,29 @@ COLI_THRESHOLD   <- 500
 entero <- filter(preds, bacteria == "entero")
 coli   <- filter(preds, bacteria == "coli")
 
-# Latest observed values for value boxes
+# Latest observed (lab) values for value boxes
 latest_entero <- entero |> filter(is_observed) |> slice_max(date)
 latest_coli   <- coli   |> filter(is_observed) |> slice_max(date)
+
+# Latest nowcast (may be more recent than the last lab sample -- the model
+# predicts every day that has rain/flow data, not just sampled days)
+nowcast_entero <- entero |> slice_max(date)
+nowcast_coli   <- coli   |> slice_max(date)
+data_updated_through <- max(preds$date)
 
 # Helper: traffic-light status
 status_label <- function(val, threshold) {
   if (is.na(val)) return(list(text = "No data", color = "secondary"))
   if (val > threshold) list(text = "Above limit", color = "danger")
   else list(text = "Below limit", color = "success")
+}
+
+# Helper: traffic-light color for a probability (higher = safer)
+prob_color <- function(p) {
+  if (is.na(p)) "secondary"
+  else if (p >= 0.9) "success"
+  else if (p >= 0.5) "warning"
+  else "danger"
 }
 
 entero_status <- status_label(latest_entero$observed, ENTERO_THRESHOLD)
@@ -144,6 +158,41 @@ list(
   caption = paste("Limit:", COLI_THRESHOLD, "CFU/100 mL"),
   color   = coli_status$color,
   icon    = if (coli_status$color == "success") "check-circle" else "exclamation-triangle"
+)
+```
+
+## Row {height=15%}
+
+```{r}
+#| content: valuebox
+#| title: "Data updated through"
+list(
+  value   = format(data_updated_through, "%d %b %Y"),
+  caption = "latest nowcast (uses rain/flow even without a new lab sample)",
+  color   = "info",
+  icon    = "calendar-check"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "P(Enterococci ≤ limit) today"
+list(
+  value   = if (nrow(nowcast_entero) > 0) paste0(round(100 * nowcast_entero$prob_under_limit), "%") else "—",
+  caption = if (nrow(nowcast_entero) > 0) paste("nowcast for", format(nowcast_entero$date, "%d %b %Y")) else "",
+  color   = prob_color(nowcast_entero$prob_under_limit),
+  icon    = "shield-check"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "P(E. coli ≤ limit) today"
+list(
+  value   = if (nrow(nowcast_coli) > 0) paste0(round(100 * nowcast_coli$prob_under_limit), "%") else "—",
+  caption = if (nrow(nowcast_coli) > 0) paste("nowcast for", format(nowcast_coli$date, "%d %b %Y")) else "",
+  color   = prob_color(nowcast_coli$prob_under_limit),
+  icon    = "shield-check"
 )
 ```
 
