@@ -1,9 +1,13 @@
 # 02_features.R
-# Build a daily grid covering swimming seasons (June–August) and create
-# a rain lag matrix that the Stan model uses to estimate the decay half-life
-# tau internally.
+# Build a daily grid covering swimming seasons (June–August) and derive the
+# rain/flow predictors used by the regression model:
+#   - rain_decay: exponentially decayed sum of trailing rainfall (captures
+#     short-lived CSO-driven bacteria pulses after rain)
+#   - log_flow:   same-day Vantaanjoki river flow (log scale; captures
+#     watershed-wide wetness / dilution)
+#   - doy:        day of year, for a within-season smooth term
 #
-# Rain lag matrix:
+# Rain lag matrix (used only to compute rain_decay):
 #   rain_lag[i, k]  =  rain on day (date_i - (k-1))   for k = 1..W
 #   Column 1 = same day (lag 0), column W = lag W-1 days back.
 #   Missing rain values are treated as 0.
@@ -13,8 +17,10 @@ library(tidyr)
 library(lubridate)
 
 RAIN_LAG_WINDOW <- 21   # days — lookback window for rain lag matrix
+RAIN_DECAY_TAU  <- 3    # days — fixed exponential decay half-life for rain_decay
 
-build_grid <- function(bacteria, rain, window = RAIN_LAG_WINDOW) {
+build_grid <- function(bacteria, rain, flow,
+                        window = RAIN_LAG_WINDOW, tau = RAIN_DECAY_TAU) {
 
   # ── Daily grid for full data range ──────────────────────────────────────────
   # A few weeks before the first bacteria date are needed to fill the lag matrix.
@@ -33,13 +39,17 @@ build_grid <- function(bacteria, rain, window = RAIN_LAG_WINDOW) {
     filter(month(date) %in% 6:8)
 
   # ── Join bacteria observations (NA on unsampled days = to predict) ───────────
+  # ── Join river flow (same-day, log scale) ───────────────────────────────────
   season_grid <- season_grid |>
     left_join(bacteria |> select(date, entero, coli), by = "date") |>
+    left_join(flow |> select(date, flow), by = "date") |>
     mutate(
       t          = as.numeric(date - min(date)),
+      doy        = yday(date),
       log_entero = log(entero),
       log_coli   = log(coli),
-      year       = year(date)
+      log_flow   = log(flow),
+      year       = factor(year(date))
     ) |>
     arrange(date)
 
@@ -57,6 +67,11 @@ build_grid <- function(bacteria, rain, window = RAIN_LAG_WINDOW) {
       if (!is.na(v)) lag_mat[i, k] <- v
     }
   }
+
+  # ── Rain decay feature: exponentially-weighted trailing rainfall ───────────
+  decay_w <- exp(-(0:(window - 1)) / tau)
+  decay_w <- decay_w / sum(decay_w)
+  season_grid$rain_decay <- as.numeric(lag_mat %*% decay_w)
 
   list(season_grid = season_grid, rain_lag = lag_mat)
 }

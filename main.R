@@ -1,8 +1,11 @@
-# main.R  —  Water bacteria GP prediction pipeline
+# main.R  —  Water bacteria prediction pipeline (summer months only)
 # Run: Rscript main.R   OR source() interactively.
 #
+# Model: Bayesian regression (brms, Stan backend) predicting log(bacteria)
+# from river flow and rainfall — see R/03_model.R for the formula.
+#
 # Required packages:
-#   install.packages(c("tidyverse", "lubridate", "rstan"))
+#   install.packages(c("tidyverse", "lubridate", "brms"))
 
 source("R/01_load_data.R")
 source("R/02_features.R")
@@ -19,12 +22,14 @@ raw  <- load_data(data_dir = "data")
 
 cat(sprintf("  Rain:     %d days (%s – %s)\n",
             nrow(raw$rain), min(raw$rain$date), max(raw$rain$date)))
+cat(sprintf("  Flow:     %d days (%s – %s)\n",
+            nrow(raw$flow), min(raw$flow$date), max(raw$flow$date)))
 cat(sprintf("  Bacteria: %d measurements (%s – %s)\n",
             nrow(raw$bacteria), min(raw$bacteria$date), max(raw$bacteria$date)))
 
-# ── 2. Feature grid ────────────────────────────────────────────────────────────
+# ── 2. Feature grid (June–August only) ────────────────────────────────────────
 message("Building feature grid...")
-grid <- build_grid(raw$bacteria, raw$rain)
+grid <- build_grid(raw$bacteria, raw$rain, raw$flow)
 
 cat(sprintf("  Grid: %d swimming-season days | %d bacteria measurements\n",
             nrow(grid$season_grid), sum(!is.na(grid$season_grid$entero))))
@@ -34,15 +39,15 @@ targets <- c("log_entero", "log_coli")
 
 all_predictions <- map_dfr(targets, function(tgt) {
   bacteria_name <- sub("log_", "", tgt)
-  message(sprintf("\nFitting GP model for %s...", bacteria_name))
+  message(sprintf("\nFitting model for %s...", bacteria_name))
 
-  fit_obj <- fit_gp_model(
+  fit_obj <- fit_bacteria_model(
     grid   = grid,
     target = tgt,
     chains = 4,
     iter   = 2000,
     seed   = 42,
-    file   = sprintf("output/gp_%s", bacteria_name)
+    file   = sprintf("output/model_%s", bacteria_name)
   )
 
   cat("\n--- Model summary:", bacteria_name, "---\n")
@@ -72,7 +77,7 @@ p <- ggplot(all_predictions, aes(x = date)) +
   scale_y_log10(labels = scales::comma) +
   facet_grid(bacteria ~ year(date), scales = "free_x") +
   labs(
-    title    = "Bacteria levels — observed (●) vs GP prediction",
+    title    = "Bacteria levels — observed (●) vs model prediction (flow + rain)",
     subtitle = "Shaded = 90 % credible interval | dashed = EU 'sufficient' threshold",
     x = NULL, y = "Bacteria CFU/100 mL (log scale)"
   ) +

@@ -1,98 +1,57 @@
 # 03_model.R
-# Fit a GP model for log(bacteria) using rstan directly.
+# Fit a Bayesian regression model (brms, Stan backend) for log(bacteria),
+# predicting from river flow and rainfall.
 #
-# Likelihood: Student-t on log-bacteria.
-# Formula:    log(bacteria) ~ Intercept + HSGP(t_s) + b_rain * rain_effect(tau)
+# Formula:
+#   log(bacteria) ~ rain_decay + log_flow + s(doy, k = 6) + (1 | year)
 #
-# Key difference from a brms-based model: the rain decay half-life tau is now
-# a model parameter estimated from data (rather than fixed at 5 days).
-# This requires the rain kernel to be computed inside Stan, which in turn
-# requires bypassing brms's formula interface and using a hand-written Stan file.
+#   rain_decay : exponentially-decayed trailing rainfall (short CSO pulses)
+#   log_flow   : same-day Vantaanjoki river flow (watershed wetness/dilution)
+#   s(doy)     : smooth within-season trend (warmer water -> more growth)
+#   (1 | year) : year-to-year variation not explained by flow/rain
 #
-# Stan file: stan/gp_model.stan
-# Cached fits: <file>.rds  (delete to force refit)
+# Student-t family for robustness to occasional extreme spikes (e.g. >800/>2400
+# censored readings). Cached fits: <file>.rds (delete, or change the formula,
+# to force a refit).
 
-library(rstan)
+library(brms)
 library(dplyr)
 
-rstan_options(auto_write = TRUE)  # cache compiled Stan binary next to .stan file
+MODEL_FORMULA <- log_value ~ rain_decay + log_flow + s(doy, k = 6) + (1 | year)
 
-# ── Helper: scale a vector and return attributes for later inversion ───────────
-scale_vec <- function(x) {
-  m <- mean(x, na.rm = TRUE); s <- sd(x, na.rm = TRUE)
-  list(scaled = (x - m) / s, mean = m, sd = s)
-}
-
-# ── Fit one GP model ───────────────────────────────────────────────────────────
-# grid: list returned by build_grid(), containing $season_grid and $rain_lag
+# ── Fit one model ───────────────────────────────────────────────────────────
+# grid:   list returned by build_grid(), containing $season_grid
 # target: "log_entero" or "log_coli"
-# file: path prefix for caching (NULL = no cache); saved as <file>.rds
-fit_gp_model <- function(grid, target = "log_entero",
-                         chains = 4, iter = 2000, seed = 42,
-                         file = NULL) {
+# file:   path prefix for caching (NULL = no cache); saved as <file>.rds
+fit_bacteria_model <- function(grid, target = "log_entero",
+                                chains = 4, iter = 2000, seed = 42,
+                                file = NULL) {
 
-  season_grid <- grid$season_grid
-  rain_lag    <- grid$rain_lag
+  train <- grid$season_grid |>
+    rename(log_value = all_of(target)) |>
+    filter(!is.na(log_value))
 
-  # ── Identify observed rows ────────────────────────────────────────────────
-  obs_mask <- !is.na(season_grid[[target]])
-  obs_idx  <- which(obs_mask)
-  Y        <- season_grid[[target]][obs_mask]
+  if (nrow(train) == 0) stop("No observed rows for target: ", target)
 
-  if (length(obs_idx) == 0) stop("No observed rows for target: ", target)
-
-  # ── Scale time (z-score on training rows, apply to all) ───────────────────
-  sc_t <- scale_vec(season_grid$t[obs_mask])
-  t_s  <- (season_grid$t - sc_t$mean) / sc_t$sd
-
-  # ── Assemble Stan data ────────────────────────────────────────────────────
-  stan_data <- list(
-    N        = nrow(season_grid),
-    N_obs    = length(obs_idx),
-    obs_idx  = obs_idx,
-    Y        = Y,
-    t_s      = t_s,
-    rain_lag = rain_lag
+  priors <- c(
+    set_prior("normal(0, 3)", class = "Intercept"),
+    set_prior("normal(0, 2)", class = "b"),
+    set_prior("student_t(3, 0, 2)", class = "sds"),
+    set_prior("student_t(3, 0, 2)", class = "sd")
   )
 
-  # ── Cache: load if available ──────────────────────────────────────────────
-  rds_path <- if (!is.null(file)) paste0(file, ".rds") else NULL
-
-  if (!is.null(rds_path) && file.exists(rds_path)) {
-    message("  Loading cached fit: ", rds_path)
-    fit <- readRDS(rds_path)
-    return(list(fit = fit, scales = list(t = sc_t), target = target))
-  }
-
-  # ── Compile Stan model ────────────────────────────────────────────────────
-  stan_file <- file.path(
-    dirname(sys.frame(1)$ofile %||% "."),
-    "..", "stan", "gp_model.stan"
-  )
-  # Fallback: look relative to working directory
-  if (!file.exists(stan_file)) stan_file <- "stan/gp_model.stan"
-
-  sm <- stan_model(file = stan_file)
-
-  # ── Sample ────────────────────────────────────────────────────────────────
-  fit <- sampling(
-    sm,
-    data    = stan_data,
+  fit <- brm(
+    MODEL_FORMULA,
+    data    = train,
+    family  = student(),
+    prior   = priors,
     chains  = chains,
     iter    = iter,
     seed    = seed,
-    control = list(adapt_delta = 0.98),
+    control = list(adapt_delta = 0.95),
+    file    = file,
     refresh = 200
   )
 
-  # ── Save cache ────────────────────────────────────────────────────────────
-  if (!is.null(rds_path)) {
-    saveRDS(fit, rds_path)
-    message("  Saved fit: ", rds_path)
-  }
-
-  list(fit = fit, scales = list(t = sc_t), target = target)
+  list(fit = fit, target = target)
 }
-
-# Null-coalescing helper (base R doesn't have %||%)
-`%||%` <- function(a, b) if (!is.null(a)) a else b

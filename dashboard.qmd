@@ -19,6 +19,8 @@ library(lubridate)
 library(plotly)
 library(readr)
 library(DT)
+library(brms)
+library(tibble)
 
 # ── Load predictions and raw data ─────────────────────────────────────────────
 preds <- read_csv("output/predictions.csv", show_col_types = FALSE) |>
@@ -124,7 +126,7 @@ make_bacteria_plot <- function(df, threshold, title_text) {
     # Prediction line
     add_lines(data = df, x = ~date, y = ~pred_mean,
               line = list(color = "steelblue", width = 2),
-              name = "GP prediction") |>
+              name = "Model prediction") |>
     # Observed points
     add_markers(data = obs, x = ~date, y = ~observed,
                 marker = list(color = "black", size = 7),
@@ -165,6 +167,26 @@ make_bacteria_plot(filter(entero, year == "2021"), ENTERO_THRESHOLD, "Enterococc
 make_bacteria_plot(filter(entero, year == "2022"), ENTERO_THRESHOLD, "Enterococci 2022")
 ```
 
+```{r}
+#| title: "2023"
+make_bacteria_plot(filter(entero, year == "2023"), ENTERO_THRESHOLD, "Enterococci 2023")
+```
+
+```{r}
+#| title: "2024"
+make_bacteria_plot(filter(entero, year == "2024"), ENTERO_THRESHOLD, "Enterococci 2024")
+```
+
+```{r}
+#| title: "2025"
+make_bacteria_plot(filter(entero, year == "2025"), ENTERO_THRESHOLD, "Enterococci 2025")
+```
+
+```{r}
+#| title: "2026"
+make_bacteria_plot(filter(entero, year == "2026"), ENTERO_THRESHOLD, "Enterococci 2026")
+```
+
 ### E. coli {.tabset}
 
 ```{r}
@@ -187,13 +209,34 @@ make_bacteria_plot(filter(coli, year == "2021"), COLI_THRESHOLD, "E. coli 2021")
 make_bacteria_plot(filter(coli, year == "2022"), COLI_THRESHOLD, "E. coli 2022")
 ```
 
+```{r}
+#| title: "2023"
+make_bacteria_plot(filter(coli, year == "2023"), COLI_THRESHOLD, "E. coli 2023")
+```
+
+```{r}
+#| title: "2024"
+make_bacteria_plot(filter(coli, year == "2024"), COLI_THRESHOLD, "E. coli 2024")
+```
+
+```{r}
+#| title: "2025"
+make_bacteria_plot(filter(coli, year == "2025"), COLI_THRESHOLD, "E. coli 2025")
+```
+
+```{r}
+#| title: "2026"
+make_bacteria_plot(filter(coli, year == "2026"), COLI_THRESHOLD, "E. coli 2026")
+```
+
 ## Row {height=28%}
 
 ### Daily rainfall (mm) {width=50%}
 
 ```{r}
+# Restricted to the June–August swimming season, matching the model's training data.
 rain_plot_data <- rain_raw |>
-  filter(date >= min(preds$date) - 21, date <= max(preds$date))
+  filter(date >= min(preds$date) - 21, date <= max(preds$date), month(date) %in% 6:8)
 
 plot_ly(rain_plot_data, x = ~date, y = ~rain, type = "bar",
         marker = list(color = "rgba(70,130,200,0.7)"),
@@ -211,7 +254,7 @@ plot_ly(rain_plot_data, x = ~date, y = ~rain, type = "bar",
 
 ```{r}
 flow_plot_data <- flow_raw |>
-  filter(date >= min(preds$date) - 21, date <= max(preds$date))
+  filter(date >= min(preds$date) - 21, date <= max(preds$date), month(date) %in% 6:8)
 
 plot_ly(flow_plot_data, x = ~date, y = ~flow,
         type = "scatter", mode = "lines",
@@ -225,6 +268,54 @@ plot_ly(flow_plot_data, x = ~date, y = ~flow,
   config(displayModeBar = FALSE)
 ```
 
+# Model
+
+## Row {height=15%}
+
+::: {.card}
+Bacteria levels are predicted with a Bayesian regression (Student-t likelihood, fit
+with brms/Stan), trained only on June–August measurements:
+
+`log(bacteria) ~ rain_decay + log_flow + s(day_of_year) + (1 | year)`
+
+- **rain_decay** — trailing rainfall, exponentially weighted (3-day half-life),
+  capturing short-lived combined-sewer-overflow pulses after rain.
+- **log_flow** — same-day Vantaanjoki river flow at Oulunkylä, capturing
+  watershed-wide wetness and dilution.
+- **s(day_of_year)** — a smooth within-season trend (e.g. warmer water → more growth).
+- **(1 | year)** — a per-year adjustment for variation not explained by flow/rain.
+:::
+
+## Row {height=42%}
+
+```{r}
+model_entero <- readRDS("output/model_entero.rds")
+model_coli   <- readRDS("output/model_coli.rds")
+
+coef_table <- function(fit, label) {
+  as.data.frame(brms::fixef(fit)) |>
+    tibble::rownames_to_column("Term") |>
+    filter(Term != "Intercept") |>
+    transmute(
+      Bacteria  = label,
+      Term,
+      Estimate  = round(Estimate, 3),
+      `95% CI`  = paste0("[", round(Q2.5, 3), ", ", round(Q97.5, 3), "]"),
+      `Credible effect` = ifelse(Q2.5 > 0 | Q97.5 < 0, "Yes", "No")
+    )
+}
+
+bind_rows(
+  coef_table(model_entero, "Enterococci"),
+  coef_table(model_coli,   "E. coli")
+) |>
+  datatable(options = list(dom = "t", pageLength = 20), rownames = FALSE) |>
+  formatStyle(
+    "Credible effect",
+    backgroundColor = styleEqual(c("Yes", "No"), c("#e0ffe0", "#f0f0f0"))
+  )
+```
+
 # Measurements
 
 ## Row
@@ -236,7 +327,7 @@ preds |>
     Date        = format(date, "%d %b %Y"),
     Bacteria    = toupper(bacteria),
     `Observed (CFU/100 mL)` = observed,
-    `GP prediction`         = round(pred_mean),
+    `Model prediction`      = round(pred_mean),
     `90% CI low`            = round(pred_lo90),
     `90% CI high`           = round(pred_hi90),
     `Above limit`           = case_when(
