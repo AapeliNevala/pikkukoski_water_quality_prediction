@@ -1,0 +1,258 @@
+---
+title: "Bathing Water Quality Monitor"
+format:
+  dashboard:
+    theme: cosmo
+    scrolling: true
+    nav-buttons:
+      - icon: github
+        href: "#"
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(lubridate)
+library(plotly)
+library(readr)
+library(DT)
+
+# ── Load predictions and raw data ─────────────────────────────────────────────
+preds <- read_csv("output/predictions.csv", show_col_types = FALSE) |>
+  mutate(year = as.character(year(date)))
+
+rain_raw <- read_csv("data/sademaarat.csv", show_col_types = FALSE) |>
+  rename(year_n = Vuosi, month = Kk, day = Pv, rain = `Sademäärä (mm)`) |>
+  mutate(date = make_date(year_n, month, day),
+         rain = if_else(rain < 0, NA_real_, rain)) |>
+  select(date, rain)
+
+flow_raw <- read_delim("data/virtaama.csv", delim = ";",
+                       show_col_types = FALSE, trim_ws = TRUE) |>
+  rename(date = `Päivä`, flow = virtaama) |>
+  mutate(date = dmy(date)) |>
+  select(date, flow)
+
+ENTERO_THRESHOLD <- 400
+COLI_THRESHOLD   <- 500
+
+entero <- filter(preds, bacteria == "entero")
+coli   <- filter(preds, bacteria == "coli")
+
+# Latest observed values for value boxes
+latest_entero <- entero |> filter(is_observed) |> slice_max(date)
+latest_coli   <- coli   |> filter(is_observed) |> slice_max(date)
+
+# Helper: traffic-light status
+status_label <- function(val, threshold) {
+  if (is.na(val)) return(list(text = "No data", color = "secondary"))
+  if (val > threshold) list(text = "Above limit", color = "danger")
+  else list(text = "Below limit", color = "success")
+}
+
+entero_status <- status_label(latest_entero$observed, ENTERO_THRESHOLD)
+coli_status   <- status_label(latest_coli$observed,   COLI_THRESHOLD)
+```
+
+# Overview
+
+## Row {height=15%}
+
+```{r}
+#| content: valuebox
+#| title: "Latest Entero measurement"
+list(
+  value = if (nrow(latest_entero) > 0) paste0(latest_entero$observed, " CFU/100 mL") else "—",
+  caption = if (nrow(latest_entero) > 0) format(latest_entero$date, "%d %b %Y") else "",
+  color = entero_status$color,
+  icon  = "droplet"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Entero status"
+list(
+  value   = entero_status$text,
+  caption = paste("Limit:", ENTERO_THRESHOLD, "CFU/100 mL"),
+  color   = entero_status$color,
+  icon    = if (entero_status$color == "success") "check-circle" else "exclamation-triangle"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Latest E. coli measurement"
+list(
+  value   = if (nrow(latest_coli) > 0) paste0(latest_coli$observed, " CFU/100 mL") else "—",
+  caption = if (nrow(latest_coli) > 0) format(latest_coli$date, "%d %b %Y") else "",
+  color   = coli_status$color,
+  icon    = "droplet-fill"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "E. coli status"
+list(
+  value   = coli_status$text,
+  caption = paste("Limit:", COLI_THRESHOLD, "CFU/100 mL"),
+  color   = coli_status$color,
+  icon    = if (coli_status$color == "success") "check-circle" else "exclamation-triangle"
+)
+```
+
+## Row {height=42%}
+
+### Enterococci {.tabset}
+
+```{r}
+#| title: "All years"
+make_bacteria_plot <- function(df, threshold, title_text) {
+  obs <- filter(df, is_observed)
+
+  plot_ly() |>
+    # CI ribbon
+    add_ribbons(data = df, x = ~date,
+                ymin = ~pred_lo90, ymax = ~pred_hi90,
+                fillcolor = "rgba(70,130,180,0.2)",
+                line = list(color = "transparent"),
+                name = "90% CI", hoverinfo = "skip") |>
+    # Prediction line
+    add_lines(data = df, x = ~date, y = ~pred_mean,
+              line = list(color = "steelblue", width = 2),
+              name = "GP prediction") |>
+    # Observed points
+    add_markers(data = obs, x = ~date, y = ~observed,
+                marker = list(color = "black", size = 7),
+                name = "Observed",
+                text  = ~paste0(format(date, "%d %b %Y"),
+                                "<br>Measured: ", observed, " CFU/100 mL"),
+                hovertemplate = "%{text}<extra></extra>") |>
+    # Threshold line
+    add_lines(x = range(df$date), y = c(threshold, threshold),
+              line = list(color = "red", dash = "dash", width = 1.5),
+              name = paste("Limit:", threshold),
+              hoverinfo = "skip") |>
+    layout(
+      yaxis  = list(title = "CFU / 100 mL", type = "log",
+                    tickformat = ","),
+      xaxis  = list(title = ""),
+      legend = list(orientation = "h", y = -0.15),
+      hovermode = "x unified"
+    ) |>
+    config(displayModeBar = FALSE)
+}
+
+make_bacteria_plot(entero, ENTERO_THRESHOLD, "Enterococci")
+```
+
+```{r}
+#| title: "2020"
+make_bacteria_plot(filter(entero, year == "2020"), ENTERO_THRESHOLD, "Enterococci 2020")
+```
+
+```{r}
+#| title: "2021"
+make_bacteria_plot(filter(entero, year == "2021"), ENTERO_THRESHOLD, "Enterococci 2021")
+```
+
+```{r}
+#| title: "2022"
+make_bacteria_plot(filter(entero, year == "2022"), ENTERO_THRESHOLD, "Enterococci 2022")
+```
+
+### E. coli {.tabset}
+
+```{r}
+#| title: "All years"
+make_bacteria_plot(coli, COLI_THRESHOLD, "E. coli")
+```
+
+```{r}
+#| title: "2020"
+make_bacteria_plot(filter(coli, year == "2020"), COLI_THRESHOLD, "E. coli 2020")
+```
+
+```{r}
+#| title: "2021"
+make_bacteria_plot(filter(coli, year == "2021"), COLI_THRESHOLD, "E. coli 2021")
+```
+
+```{r}
+#| title: "2022"
+make_bacteria_plot(filter(coli, year == "2022"), COLI_THRESHOLD, "E. coli 2022")
+```
+
+## Row {height=28%}
+
+### Daily rainfall (mm) {width=50%}
+
+```{r}
+rain_plot_data <- rain_raw |>
+  filter(date >= min(preds$date) - 21, date <= max(preds$date))
+
+plot_ly(rain_plot_data, x = ~date, y = ~rain, type = "bar",
+        marker = list(color = "rgba(70,130,200,0.7)"),
+        name = "Rain (mm)",
+        hovertemplate = "%{x|%d %b %Y}: %{y:.1f} mm<extra></extra>") |>
+  layout(
+    xaxis = list(title = ""),
+    yaxis = list(title = "mm"),
+    bargap = 0
+  ) |>
+  config(displayModeBar = FALSE)
+```
+
+### River flow (m³/s) {width=50%}
+
+```{r}
+flow_plot_data <- flow_raw |>
+  filter(date >= min(preds$date) - 21, date <= max(preds$date))
+
+plot_ly(flow_plot_data, x = ~date, y = ~flow,
+        type = "scatter", mode = "lines",
+        line = list(color = "rgba(0,100,160,0.8)", width = 1.5),
+        name = "Flow",
+        hovertemplate = "%{x|%d %b %Y}: %{y:.1f} m³/s<extra></extra>") |>
+  layout(
+    xaxis = list(title = ""),
+    yaxis = list(title = "m³/s")
+  ) |>
+  config(displayModeBar = FALSE)
+```
+
+# Measurements
+
+## Row
+
+```{r}
+preds |>
+  filter(is_observed) |>
+  transmute(
+    Date        = format(date, "%d %b %Y"),
+    Bacteria    = toupper(bacteria),
+    `Observed (CFU/100 mL)` = observed,
+    `GP prediction`         = round(pred_mean),
+    `90% CI low`            = round(pred_lo90),
+    `90% CI high`           = round(pred_hi90),
+    `Above limit`           = case_when(
+      bacteria == "entero" ~ observed > ENTERO_THRESHOLD,
+      bacteria == "coli"   ~ observed > COLI_THRESHOLD
+    )
+  ) |>
+  arrange(desc(Date), Bacteria) |>
+  datatable(
+    options  = list(pageLength = 15, dom = "ftp"),
+    rownames = FALSE,
+    filter   = "top"
+  ) |>
+  formatStyle(
+    "Above limit",
+    backgroundColor = styleEqual(c(TRUE, FALSE),
+                                 c("#ffe0e0", "#e0ffe0"))
+  )
+```
