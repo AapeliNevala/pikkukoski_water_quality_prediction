@@ -24,8 +24,12 @@ build_grid <- function(bacteria, rain, flow,
 
   # ── Daily grid for full data range ──────────────────────────────────────────
   # A few weeks before the first bacteria date are needed to fill the lag matrix.
+  # The whole point of the model is nowcasting bacteria on days without a lab
+  # sample, so the grid extends to the latest date with BOTH rain and flow
+  # available -- not just the last bacteria measurement, which typically lags
+  # behind rain/flow by several days.
   date_min <- min(bacteria$date) - window
-  date_max <- max(bacteria$date)
+  date_max <- max(bacteria$date, min(max(rain$date), max(flow$date)))
 
   full_grid <- tibble(date = seq(date_min, date_max, by = "day"))
 
