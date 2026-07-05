@@ -11,6 +11,15 @@
 # for details) -- new rows are ALWAYS printed for review, and are only
 # written to disk when review = FALSE is passed explicitly.
 
+# Force a UTF-8 locale: virtaama.csv's header ("Päivä") contains a non-ASCII
+# character, and environments with no locale set (e.g. cron's stripped
+# environment) default to the "C" locale, which breaks matching that column
+# name and makes every fetch fail. Fall back through a couple of common
+# UTF-8 locale names since availability differs across systems.
+for (loc in c("en_US.UTF-8", "C.UTF-8", "en_US.utf8")) {
+  if (suppressWarnings(Sys.setlocale("LC_ALL", loc)) != "") break
+}
+
 library(dplyr)
 library(readr)
 library(lubridate)
