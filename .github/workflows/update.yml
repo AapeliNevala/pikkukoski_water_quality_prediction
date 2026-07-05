@@ -1,0 +1,73 @@
+name: Update water quality dashboard
+
+on:
+  schedule:
+    # 03:17 UTC ≈ 06:17 Finland time (shifts by an hour across DST).
+    # GitHub's scheduler can delay runs by minutes to hours during peak load.
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; let in-flight runs finish.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.5.2"
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-renv@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Fetch new data (rain/flow auto-applied; bacteria print-only)
+        run: Rscript R/00_fetch_data.R
+
+      - name: Run model + prediction pipeline
+        run: Rscript main.R
+
+      - name: Render dashboard
+        run: quarto render dashboard.qmd
+
+      - name: Commit updated data & model outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/ output/ dashboard.html dashboard_files/
+          git diff --staged --quiet || git commit -m "Automated data update $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p _site
+          cp dashboard.html _site/index.html
+          cp -r dashboard_files _site/dashboard_files
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
