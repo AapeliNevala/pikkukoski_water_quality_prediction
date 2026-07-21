@@ -31,18 +31,6 @@ preds <- read_csv("output/predictions.csv", show_col_types = FALSE) |>
 model_entero <- readRDS("output/model_entero.rds")
 model_coli   <- readRDS("output/model_coli.rds")
 
-rain_raw <- read_csv("data/sademaarat.csv", show_col_types = FALSE) |>
-  rename(year_n = Vuosi, month = Kk, day = Pv, rain = `Sademäärä (mm)`) |>
-  mutate(date = make_date(year_n, month, day),
-         rain = if_else(rain < 0, NA_real_, rain)) |>
-  select(date, rain)
-
-flow_raw <- read_delim("data/virtaama.csv", delim = ";",
-                       show_col_types = FALSE, trim_ws = TRUE) |>
-  rename(date = `Päivä`, flow = virtaama) |>
-  mutate(date = dmy(date)) |>
-  select(date, flow)
-
 ENTERO_THRESHOLD <- 400
 COLI_THRESHOLD   <- 500
 
@@ -121,51 +109,12 @@ make_bacteria_plot <- function(df, threshold, title_text) {
 
 # Overview
 
-## Row {height=15%}
+## Row {height=8%}
 
-```{r}
-#| content: valuebox
-#| title: "Latest Entero measurement"
-list(
-  value = if (nrow(latest_entero) > 0) paste0(latest_entero$observed, " CFU/100 mL") else "—",
-  caption = if (nrow(latest_entero) > 0) format(latest_entero$date, "%d %b %Y") else "",
-  color = entero_status$color,
-  icon  = "droplet"
-)
-```
-
-```{r}
-#| content: valuebox
-#| title: "Entero status"
-list(
-  value   = entero_status$text,
-  caption = paste("Limit:", ENTERO_THRESHOLD, "CFU/100 mL"),
-  color   = entero_status$color,
-  icon    = if (entero_status$color == "success") "check-circle" else "exclamation-triangle"
-)
-```
-
-```{r}
-#| content: valuebox
-#| title: "Latest E. coli measurement"
-list(
-  value   = if (nrow(latest_coli) > 0) paste0(latest_coli$observed, " CFU/100 mL") else "—",
-  caption = if (nrow(latest_coli) > 0) format(latest_coli$date, "%d %b %Y") else "",
-  color   = coli_status$color,
-  icon    = "droplet-fill"
-)
-```
-
-```{r}
-#| content: valuebox
-#| title: "E. coli status"
-list(
-  value   = coli_status$text,
-  caption = paste("Limit:", COLI_THRESHOLD, "CFU/100 mL"),
-  color   = coli_status$color,
-  icon    = if (coli_status$color == "success") "check-circle" else "exclamation-triangle"
-)
-```
+::: {.card}
+⚠️ The dashboard is updated at random times. The model is experimental and
+should not be used as a license (or reason not) to swim.
+:::
 
 ## Row {height=15%}
 
@@ -210,6 +159,54 @@ list(
   caption = format(Sys.time(), "%H:%M %Z"),
   color   = "light",
   icon    = "clock-history"
+)
+```
+
+## Row {height=15%}
+
+```{r}
+#| content: valuebox
+list(
+  title = if (nrow(latest_entero) > 0)
+    paste0("Latest Entero measurement — ", format(latest_entero$date, "%d %b %Y"))
+  else "Latest Entero measurement",
+  value = if (nrow(latest_entero) > 0) paste0(latest_entero$observed, " CFU/100 mL") else "—",
+  color = entero_status$color,
+  icon  = "droplet"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Entero status"
+list(
+  value   = entero_status$text,
+  caption = paste("Limit:", ENTERO_THRESHOLD, "CFU/100 mL"),
+  color   = entero_status$color,
+  icon    = if (entero_status$color == "success") "check-circle" else "exclamation-triangle"
+)
+```
+
+```{r}
+#| content: valuebox
+list(
+  title = if (nrow(latest_coli) > 0)
+    paste0("Latest E. coli measurement — ", format(latest_coli$date, "%d %b %Y"))
+  else "Latest E. coli measurement",
+  value   = if (nrow(latest_coli) > 0) paste0(latest_coli$observed, " CFU/100 mL") else "—",
+  color   = coli_status$color,
+  icon    = "droplet-fill"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "E. coli status"
+list(
+  value   = coli_status$text,
+  caption = paste("Limit:", COLI_THRESHOLD, "CFU/100 mL"),
+  color   = coli_status$color,
+  icon    = if (coli_status$color == "success") "check-circle" else "exclamation-triangle"
 )
 ```
 
@@ -297,45 +294,6 @@ make_bacteria_plot(filter(coli, year == "2024"), COLI_THRESHOLD, "E. coli 2024")
 ```{r}
 #| title: "2025"
 make_bacteria_plot(filter(coli, year == "2025"), COLI_THRESHOLD, "E. coli 2025")
-```
-
-## Row {height=28%}
-
-### Daily rainfall (mm) {width=50%}
-
-```{r}
-# Restricted to the June–August swimming season, matching the model's training data.
-rain_plot_data <- rain_raw |>
-  filter(date >= min(preds$date) - 21, date <= max(preds$date), month(date) %in% 6:8)
-
-plot_ly(rain_plot_data, x = ~date, y = ~rain, type = "bar",
-        marker = list(color = "rgba(70,130,200,0.7)"),
-        name = "Rain (mm)",
-        hovertemplate = "%{x|%d %b %Y}: %{y:.1f} mm<extra></extra>") |>
-  layout(
-    xaxis = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
-    yaxis = list(title = "mm"),
-    bargap = 0
-  ) |>
-  config(displayModeBar = FALSE)
-```
-
-### River flow (m³/s) {width=50%}
-
-```{r}
-flow_plot_data <- flow_raw |>
-  filter(date >= min(preds$date) - 21, date <= max(preds$date), month(date) %in% 6:8)
-
-plot_ly(flow_plot_data, x = ~date, y = ~flow,
-        type = "scatter", mode = "lines",
-        line = list(color = "rgba(0,100,160,0.8)", width = 1.5),
-        name = "Flow",
-        hovertemplate = "%{x|%d %b %Y}: %{y:.1f} m³/s<extra></extra>") |>
-  layout(
-    xaxis = list(title = "", rangebreaks = SUMMER_RANGEBREAKS),
-    yaxis = list(title = "m³/s")
-  ) |>
-  config(displayModeBar = FALSE)
 ```
 
 # Model
