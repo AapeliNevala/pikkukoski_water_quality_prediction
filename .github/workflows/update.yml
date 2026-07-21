@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 # Only one Pages deployment at a time; let in-flight runs finish.
 concurrency:
@@ -33,6 +31,9 @@ jobs:
       - uses: r-lib/actions/setup-renv@v2
 
       - uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Install system dependencies (pdftotext for bacteria PDF parsing)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Fetch new data (rain/flow auto-applied; bacteria print-only)
         run: Rscript R/00_fetch_data.R
@@ -57,17 +58,8 @@ jobs:
           cp dashboard.html _site/index.html
           cp -r dashboard_files _site/dashboard_files
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Publish to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _site
