@@ -1,5 +1,7 @@
 ---
 title: "Bathing Water Quality Monitor"
+date: last-modified
+date-format: "D MMM YYYY, HH:mm"
 format:
   dashboard:
     theme: cosmo
@@ -22,9 +24,12 @@ library(DT)
 library(brms)
 library(tibble)
 
-# ── Load predictions and raw data ─────────────────────────────────────────────
+# ── Load predictions, raw data, and fitted models ─────────────────────────────
 preds <- read_csv("output/predictions.csv", show_col_types = FALSE) |>
   mutate(year = as.character(year(date)))
+
+model_entero <- readRDS("output/model_entero.rds")
+model_coli   <- readRDS("output/model_coli.rds")
 
 rain_raw <- read_csv("data/sademaarat.csv", show_col_types = FALSE) |>
   rename(year_n = Vuosi, month = Kk, day = Pv, rain = `Sademäärä (mm)`) |>
@@ -111,6 +116,7 @@ make_bacteria_plot <- function(df, threshold, title_text) {
     ) |>
     config(displayModeBar = FALSE)
 }
+
 ```
 
 # Overview
@@ -193,6 +199,17 @@ list(
   caption = if (nrow(nowcast_coli) > 0) paste("nowcast for", format(nowcast_coli$date, "%d %b %Y")) else "",
   color   = prob_color(nowcast_coli$prob_under_limit),
   icon    = "shield-check"
+)
+```
+
+```{r}
+#| content: valuebox
+#| title: "Dashboard generated"
+list(
+  value   = format(Sys.time(), "%d %b %Y"),
+  caption = format(Sys.time(), "%H:%M %Z"),
+  color   = "light",
+  icon    = "clock-history"
 )
 ```
 
@@ -326,25 +343,52 @@ plot_ly(flow_plot_data, x = ~date, y = ~flow,
 ## Row {height=15%}
 
 ::: {.card}
-Bacteria levels are predicted with a Bayesian regression (Student-t likelihood, fit
-with brms/Stan), trained only on June–August measurements:
+## What the model predicts
 
-`log(bacteria) ~ rain_decay + log_flow + s(day_of_year) + (1 | year)`
+Bacteria levels (Enterococci and *E. coli*, in CFU/100 mL) at Pikkukoski beach
+are **nowcast** — estimated for today and recent days from rain and river-flow
+data, ahead of the next lab sample — using a separate Bayesian regression for
+each bacteria type, fit with **brms/Stan** on June–August measurements only
+(the swimming season; the beach isn't monitored the rest of the year):
+
+`log(bacteria) ~ rain_decay + log_flow + s(day_of_year, k = 6) + (1 | year)`
+
+**Predictors**
 
 - **rain_decay** — trailing rainfall, exponentially weighted (3-day half-life),
   capturing short-lived combined-sewer-overflow pulses after rain.
 - **log_flow** — same-day Vantaanjoki river flow at Oulunkylä, capturing
   watershed-wide wetness and dilution.
 - **s(day_of_year)** — a smooth within-season trend (e.g. warmer water → more growth).
-- **(1 | year)** — a per-year adjustment for variation not explained by flow/rain.
+- **(1 | year)** — a per-year random intercept for variation not explained by flow/rain.
+
+**Why Student-t, not Normal**
+
+Bacteria counts occasionally spike far above what rain/flow alone predicts
+(e.g. one-off contamination events, or censored ">800"/">2400" lab readings).
+A Student-t likelihood has heavier tails than a Normal, so a handful of
+extreme readings pull the fitted trend line much less than they would under
+ordinary least-squares — the model stays representative of typical conditions
+instead of being dragged toward rare outliers.
+
+**Fitting and uncertainty**
+
+Each model is fit with 4 MCMC chains via Stan's No-U-Turn sampler. Weakly
+informative priors (Normal/Student-t, centred at 0) regularise the
+coefficients given the fairly small number of summer samples per year. After
+fitting, the pipeline checks for **divergent transitions** — a warning sign
+that the sampler couldn't reliably explore the posterior — and automatically
+refits with a smaller step size (higher `adapt_delta`) if any are found, up
+to 5 attempts, so the coefficients and intervals below can be trusted. The
+shaded bands on the *Overview* charts and the `90% CI` columns below are
+90% posterior credible intervals, not simple standard errors; the "P(≤ limit)"
+value boxes are the posterior predictive probability that a fresh sample
+today would fall under the regulatory limit.
 :::
 
 ## Row {height=42%}
 
 ```{r}
-model_entero <- readRDS("output/model_entero.rds")
-model_coli   <- readRDS("output/model_coli.rds")
-
 coef_table <- function(fit, label) {
   as.data.frame(brms::fixef(fit)) |>
     tibble::rownames_to_column("Term") |>
@@ -400,3 +444,28 @@ preds |>
                                  c("#ffe0e0", "#e0ffe0"))
   )
 ```
+
+# Credits
+
+## Row
+
+::: {.card}
+## Data sources
+
+This dashboard combines three independently published datasets:
+
+- **Rainfall** — [Finnish Meteorological Institute (FMI) open data](https://en.ilmatieteenlaitos.fi/open-data),
+  daily precipitation from the Helsinki Kumpula observation station
+  (FMISID 101004), via the FMI WFS API.
+- **River flow** — [SYKE / Finnish Environment Institute Hydrologiarajapinta](https://www.ymparisto.fi/),
+  daily discharge from the Vantaanjoki river gauge at Oulunkylä (station ID 1097),
+  via the Hydrologiarajapinta OData API.
+- **Bacteria measurements** — [City of Helsinki bathing water quality reports](https://www.hel.fi/)
+  ("Uimavedenlaatu"), lab samples for Pikkukoski beach on the Vantaanjoki river,
+  published as an annual PDF report by the city's environmental services.
+
+Rain and river-flow data update automatically and daily. Bacteria measurements
+are added only after manual review of each new lab report, since the report's
+layout is not fully consistent year to year — see `R/00_fetch_data.R` for
+details.
+:::

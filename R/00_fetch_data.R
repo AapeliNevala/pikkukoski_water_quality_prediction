@@ -9,7 +9,12 @@
 # Bacteria measurements come from Helsinki's annual PDF report, which has
 # an inconsistent internal layout year to year (see fetch_bacteria_updates()
 # for details) -- new rows are ALWAYS printed for review, and are only
-# written to disk when review = FALSE is passed explicitly.
+# written to disk when review = FALSE is passed explicitly. The pipeline
+# run below passes review = FALSE (auto-write), relying on that function's
+# built-in sanity checks (block count, beach-name cross-check) to abort
+# instead of writing anything if the PDF layout looks off; run
+# fetch_bacteria_updates() interactively (review = TRUE by default) to
+# inspect new rows by hand before they're appended.
 
 # Force a UTF-8 locale: virtaama.csv's header ("Päivä") contains a non-ASCII
 # character, and environments with no locale set (e.g. cron's stripped
@@ -285,5 +290,5 @@ fetch_bacteria_updates <- function(path = "data/vesilaatudata.csv",
 if (identical(environment(), globalenv()) && sys.nframe() == 0) {
   message("== Rain ==");     fetch_rain_updates()
   message("== Flow ==");     fetch_flow_updates()
-  message("== Bacteria =="); fetch_bacteria_updates()
+  message("== Bacteria =="); fetch_bacteria_updates(review = FALSE)
 }

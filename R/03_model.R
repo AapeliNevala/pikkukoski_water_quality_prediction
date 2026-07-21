@@ -13,11 +13,21 @@
 # Student-t family for robustness to occasional extreme spikes (e.g. >800/>2400
 # censored readings). Cached fits: <file>.rds (delete, or change the formula,
 # to force a refit).
+#
+# Divergent transitions signal that the sampler can't be trusted (biased
+# posterior). If any show up, we automatically refit with a higher
+# adapt_delta (smaller step size) and a new seed, up to MAX_REFITS times.
 
 library(brms)
 library(dplyr)
 
 MODEL_FORMULA <- log_value ~ rain_decay + log_flow + s(doy, k = 6) + (1 | year)
+
+# ── Helper: count divergent transitions across all chains ──────────────────
+count_divergences <- function(fit) {
+  np <- nuts_params(fit, pars = "divergent__")
+  sum(np$Value)
+}
 
 # ── Fit one model ───────────────────────────────────────────────────────────
 # grid:   list returned by build_grid(), containing $season_grid
@@ -25,7 +35,10 @@ MODEL_FORMULA <- log_value ~ rain_decay + log_flow + s(doy, k = 6) + (1 | year)
 # file:   path prefix for caching (NULL = no cache); saved as <file>.rds
 fit_bacteria_model <- function(grid, target = "log_entero",
                                 chains = 4, iter = 2000, seed = 42,
-                                file = NULL) {
+                                file = NULL,
+                                adapt_delta = 0.95,
+                                max_adapt_delta = 0.999,
+                                max_refits = 5) {
 
   train <- grid$season_grid |>
     rename(log_value = all_of(target)) |>
@@ -48,10 +61,46 @@ fit_bacteria_model <- function(grid, target = "log_entero",
     chains  = chains,
     iter    = iter,
     seed    = seed,
-    control = list(adapt_delta = 0.95),
+    control = list(adapt_delta = adapt_delta),
     file    = file,
     refresh = 200
   )
+
+  n_divergent <- count_divergences(fit)
+  refit_count <- 0
+
+  while (n_divergent > 0 && refit_count < max_refits && adapt_delta < max_adapt_delta) {
+    refit_count <- refit_count + 1
+    adapt_delta <- min(adapt_delta + 0.02, max_adapt_delta)
+
+    message(sprintf(
+      "  %d divergent transition(s) detected — refitting (attempt %d/%d, adapt_delta = %.3f)",
+      n_divergent, refit_count, max_refits, adapt_delta
+    ))
+
+    fit <- update(
+      fit,
+      control    = list(adapt_delta = adapt_delta),
+      seed       = seed + refit_count,
+      file       = file,
+      file_refit = "always",
+      recompile  = FALSE
+    )
+
+    n_divergent <- count_divergences(fit)
+  }
+
+  if (n_divergent > 0) {
+    warning(sprintf(
+      "Model for %s still has %d divergent transition(s) after %d refit(s) (adapt_delta = %.3f)",
+      target, n_divergent, refit_count, adapt_delta
+    ))
+  } else if (refit_count > 0) {
+    message(sprintf(
+      "  Resolved after %d refit(s): 0 divergent transitions (adapt_delta = %.3f)",
+      refit_count, adapt_delta
+    ))
+  }
 
   list(fit = fit, target = target)
 }
