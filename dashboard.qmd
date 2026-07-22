@@ -114,56 +114,8 @@ make_bacteria_plot <- function(df, threshold, title_text) {
 ::: {.card}
 ⚠️ This dashboard refreshes once a day (around 09:30 Finnish time) and is
 experimental — it should not be used as a reason to swim, or not to swim.
-See "What is this?" below for a plain-language explanation.
-:::
-
-## Row {height=25%}
-
-::: {.card}
-## What is this? {.unnumbered}
-
-**Pikkukoski** is a popular river beach on the Vantaanjoki, in the Oulunkylä
-area of Helsinki. Like all official Finnish bathing spots, it's tested a
-handful of times each summer for two types of bacteria that indicate faecal
-contamination — sewage or animal waste getting into the water:
-
-- **Intestinal enterococci** ("Entero")
-- ***E. coli***
-
-Both are measured in **CFU per 100 mL** (colony-forming units — roughly,
-"how many live bacteria would grow from a 100 mL water sample"). Under the
-EU Bathing Water Directive and Finnish guidelines for this type of inland
-water, a sample is considered **fine to swim in below 400 CFU/100 mL for
-Enterococci and 500 CFU/100 mL for *E. coli*** — that's what "the limit" and
-the traffic-light colours on this dashboard refer to. Above it, the water is
-classed as poorer quality and swimming is more likely to make you sick
-(usually a stomach bug, not anything dangerous, but unpleasant).
-
-**The problem this dashboard tries to help with:** the city only samples
-Pikkukoski every couple of weeks, so on any given day you're usually looking
-at two-week-old lab results. Bacteria counts, though, can swing a lot faster
-than that — heavy rain washes contamination into the river (via runoff and
-overloaded sewers) and levels can spike within a day or two, then fade as
-the river flushes it out.
-
-**What the model actually does:** it's a statistical model trained on past
-lab samples together with each day's rainfall and river flow, so it can
-**"nowcast"** — estimate today's likely bacteria level — for every day in
-between real lab samples, using whatever rain/flow data is available right
-now. It is not a lab measurement; it's an educated, uncertain guess.
-
-**How to read the "P(≤ limit)" percentages:** these say how confident the
-model is that a real sample taken *today* would come back under the safety
-limit. 90% means "if we actually tested today, we'd expect it to pass about
-9 times out of 10 based on recent rain and river conditions" — not "there's
-a 90% chance the water is clean" in some absolute sense, and not a
-substitute for an actual test. Lower percentages mean more uncertainty or
-more risk, not a certainty of failure.
-
-**Bottom line:** treat this as a rough, automated heads-up between official
-samples — useful for noticing "it rained hard yesterday, maybe be cautious"
-— not as an authority on whether the water is currently safe. For that,
-check the City of Helsinki's own bathing water pages.
+See "What is this?" at the bottom of this page for a plain-language
+explanation.
 :::
 
 ## Row {height=15%}
@@ -345,6 +297,47 @@ make_bacteria_plot(filter(coli, year == "2024"), COLI_THRESHOLD, "E. coli 2024")
 #| title: "2025"
 make_bacteria_plot(filter(coli, year == "2025"), COLI_THRESHOLD, "E. coli 2025")
 ```
+
+## Row {height=25%}
+
+::: {.card}
+## What is this? {.unnumbered}
+
+**Pikkukoski** is a popular river beach on the Vantaanjoki, in the Oulunkylä
+area of Helsinki. Like all official Finnish bathing spots, it's tested a
+handful of times each summer for two types of bacteria that indicate faecal
+contamination — sewage or animal waste getting into the water:
+
+- **Intestinal enterococci** ("Entero")
+- ***E. coli***
+
+Both are measured in **CFU per 100 mL** (colony-forming units — roughly,
+"how many live bacteria would grow from a 100 mL water sample"). Under the
+EU Bathing Water Directive and Finnish guidelines for this type of inland
+water, a sample is considered **fine to swim in below 400 CFU/100 mL for
+Enterococci and 500 CFU/100 mL for *E. coli*** — that's what "the limit" and
+the traffic-light colours on this dashboard refer to. Above it, the water is
+classed as poorer quality.
+
+**What the model actually does:** it's a statistical model trained on past
+lab samples together with each day's rainfall and river flow, so it can
+**"nowcast"** — estimate today's likely bacteria level — for every day in
+between real lab samples, using whatever rain/flow data is available right
+now. It is not a lab measurement; it's an educated, uncertain guess.
+
+**How to read the "P(≤ limit)" percentages:** these say how confident the
+model is that a real sample taken *today* would come back under the safety
+limit. 90% means "if we actually tested today, we'd expect it to pass about
+9 times out of 10 based on recent rain and river conditions" — not "there's
+a 90% chance the water is clean" in some absolute sense, and not a
+substitute for an actual test. Lower percentages mean more uncertainty or
+more risk, not a certainty of failure.
+
+**Bottom line:** treat this as a rough, automated heads-up between official
+samples — useful for noticing "it rained hard yesterday, maybe be cautious"
+— not as an authority on whether the water is currently safe. For that,
+check the City of Helsinki's own bathing water pages.
+:::
 
 # Model
 
