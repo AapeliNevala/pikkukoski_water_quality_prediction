@@ -2,9 +2,14 @@ name: Update water quality dashboard
 
 on:
   schedule:
-    # 03:17 UTC ≈ 06:17 Finland time (shifts by an hour across DST).
-    # GitHub's scheduler can delay runs by minutes to hours during peak load.
-    - cron: "17 3 * * *"
+    # GitHub Actions cron always runs in UTC and can't express "Finland local
+    # time" directly, so we schedule both possible UTC offsets for 09:30
+    # Europe/Helsinki (EEST = UTC+3 in summer, EET = UTC+2 in winter) and let
+    # the `gate` job below skip whichever one doesn't match the current
+    # local hour. GitHub's scheduler can also delay runs by minutes to hours
+    # during peak load.
+    - cron: "30 6 * * *"  # 09:30 EEST (summer, UTC+3)
+    - cron: "30 7 * * *"  # 09:30 EET  (winter, UTC+2)
   workflow_dispatch:
     inputs:
       force_refit:
@@ -23,7 +28,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    # Only relevant for the schedule trigger: with two cron entries covering
+    # both DST offsets, exactly one fires at real 09:30 Helsinki time and the
+    # other should be a no-op. Manual dispatches and pushes always proceed.
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            hour=$(TZ='Europe/Helsinki' date +%H)
+            if [ "$hour" != "09" ]; then
+              echo "Skipping: it's $hour:00 in Helsinki, not the 09:xx slot this cron entry targets."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
