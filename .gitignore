@@ -6,3 +6,5 @@ renv/library/
 renv/python/
 renv/staging/
 logs/
+dashboard.html
+dashboard_files/
