@@ -5,7 +5,12 @@ on:
     # 03:17 UTC ≈ 06:17 Finland time (shifts by an hour across DST).
     # GitHub's scheduler can delay runs by minutes to hours during peak load.
     - cron: "17 3 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_refit:
+        description: "Force model refit and re-render even if no new data was fetched"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -35,8 +40,12 @@ jobs:
       - name: Install system dependencies (pdftotext for bacteria PDF parsing)
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
-      - name: Fetch new data (rain/flow auto-applied; bacteria print-only)
+      - name: Fetch new data (rain, flow, and bacteria all auto-applied)
         run: Rscript R/00_fetch_data.R
+
+      - name: Force model refit (manual override)
+        if: ${{ github.event.inputs.force_refit == 'true' }}
+        run: rm -f output/model_entero.rds output/model_coli.rds
 
       - name: Run model + prediction pipeline
         run: Rscript main.R
