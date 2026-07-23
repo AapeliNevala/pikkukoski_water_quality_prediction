@@ -8,6 +8,9 @@ on:
     # the `gate` job below skip whichever one doesn't match the current
     # local hour. GitHub's scheduler can also delay runs by minutes to hours
     # during peak load.
+    #
+    # Re-saved 2026-07-23 to nudge GitHub into re-registering the schedule
+    # after it stopped firing following the previous edit.
     - cron: "30 6 * * *"  # 09:30 EEST (summer, UTC+3)
     - cron: "30 7 * * *"  # 09:30 EET  (winter, UTC+2)
   workflow_dispatch:
