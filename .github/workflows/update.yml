@@ -18,7 +18,7 @@ on:
       force_refit:
         description: "Force model refit and re-render even if no new data was fetched"
         type: boolean
-        default: false
+        default: true
   push:
     branches: [main]
 
