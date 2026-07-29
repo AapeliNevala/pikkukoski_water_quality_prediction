@@ -4,10 +4,13 @@ on:
   schedule:
     # GitHub Actions cron always runs in UTC and can't express "Finland local
     # time" directly, so we schedule both possible UTC offsets for 09:30
-    # Europe/Helsinki (EEST = UTC+3 in summer, EET = UTC+2 in winter) and let
-    # the `gate` job below skip whichever one doesn't match the current
-    # local hour. GitHub's scheduler can also delay runs by minutes to hours
-    # during peak load.
+    # Europe/Helsinki (EEST = UTC+3 in summer, EET = UTC+2 in winter). Both
+    # entries fire every day; the `gate` job below skips whichever one is
+    # redundant. GitHub's scheduler can also delay runs by minutes to hours
+    # during peak load, so the two entries double as a retry: if the first
+    # one is delayed past its window, the second still triggers a run since
+    # gating is based on whether today's update has landed yet, not on the
+    # wall-clock hour.
     #
     # Re-saved 2026-07-23 to nudge GitHub into re-registering the schedule
     # after it stopped firing following the previous edit.
@@ -33,18 +36,28 @@ concurrency:
 jobs:
   gate:
     # Only relevant for the schedule trigger: with two cron entries covering
-    # both DST offsets, exactly one fires at real 09:30 Helsinki time and the
-    # other should be a no-op. Manual dispatches and pushes always proceed.
+    # both DST offsets, only one is "supposed" to matter each day, but
+    # GitHub's scheduler can delay a run by hours, so we can't gate on
+    # wall-clock time (that's what caused runs to be skipped even when
+    # nothing had actually run yet). Instead, gate on whether today's
+    # automated update has already landed: skip only if it has. This makes
+    # the second cron entry act as a retry for a delayed/missed first one.
+    # Manual dispatches and pushes always proceed.
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'schedule' }}
+        with:
+          fetch-depth: 20
+
       - id: check
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            hour=$(TZ='Europe/Helsinki' date +%H)
-            if [ "$hour" != "09" ]; then
-              echo "Skipping: it's $hour:00 in Helsinki, not the 09:xx slot this cron entry targets."
+            today=$(date -u +%Y-%m-%d)
+            if git log --format=%s -n 20 | grep -qF "Automated data update $today"; then
+              echo "Skipping: today's automated update ($today) has already run."
               echo "run=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
