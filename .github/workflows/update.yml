@@ -14,8 +14,8 @@ on:
     #
     # Re-saved 2026-07-23 to nudge GitHub into re-registering the schedule
     # after it stopped firing following the previous edit.
-    - cron: "30 6 * * *"  # 09:30 EEST (summer, UTC+3)
-    - cron: "30 7 * * *"  # 09:30 EET  (winter, UTC+2)
+    - cron: "24 4 * * *"  # 09:30 EEST (summer, UTC+3)
+    - cron: "47 7 * * *"  # 09:30 EET  (winter, UTC+2)
   workflow_dispatch:
     inputs:
       force_refit:
